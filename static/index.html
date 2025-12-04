@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meeting Room Booking System</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .card {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+
+        h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 600;
+            font-size: 0.95em;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            width: 100%;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+
+        .alert-success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .alert-error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .booking-list {
+            margin-top: 20px;
+        }
+
+        .booking-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border-left: 4px solid #667eea;
+        }
+
+        .booking-item strong {
+            color: #667eea;
+        }
+
+        .two-column {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .two-column {
+                grid-template-columns: 1fr;
+            }
+
+            h1 {
+                font-size: 1.8em;
+            }
+        }
+
+        .helper-text {
+            font-size: 0.85em;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            color: #667eea;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏢 Meeting Room Booking System</h1>
+
+        <!-- Create Booking Form -->
+        <div class="card">
+            <h2>Book a Meeting Room</h2>
+            <div id="createAlert"></div>
+
+            <form id="createBookingForm">
+                <div class="form-group">
+                    <label for="room">Room Name *</label>
+                    <input type="text" id="room" name="room" placeholder="e.g., EVEREST, KINABALU, RINJANI" required>
+                    <div class="helper-text">Must be in UPPERCASE (letters and underscores only)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="user">Your Name *</label>
+                    <input type="text" id="user" name="user" placeholder="e.g., john_doe" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="start-datetime">Start Date & Time *</label>
+                    <input type="datetime-local" id="start-datetime" name="start-datetime" required>
+                    <div class="helper-text">Minutes must be in 10-minute increments (00, 10, 20, 30, 40, 50)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="end-datetime">End Date & Time *</label>
+                    <input type="datetime-local" id="end-datetime" name="end-datetime" required>
+                    <div class="helper-text">Minutes must be in 10-minute increments (00, 10, 20, 30, 40, 50)</div>
+                </div>
+
+                <button type="submit">📅 Book Room</button>
+            </form>
+        </div>
+
+        <!-- Query Bookings Form -->
+        <div class="card">
+            <h2>View Bookings</h2>
+            <div id="queryAlert"></div>
+
+            <form id="queryBookingsForm">
+                <div class="two-column">
+                    <div class="form-group">
+                        <label for="queryDate">Date *</label>
+                        <input type="date" id="queryDate" name="queryDate" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="filterType">Filter By *</label>
+                        <select id="filterType" name="filterType" required>
+                            <option value="">-- Select Filter --</option>
+                            <option value="room">Room</option>
+                            <option value="user">User</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group" id="filterValueGroup" style="display: none;">
+                    <label for="filterValue" id="filterValueLabel">Value *</label>
+                    <input type="text" id="filterValue" name="filterValue" placeholder="">
+                </div>
+
+                <button type="submit">🔍 Search Bookings</button>
+            </form>
+
+            <div class="loading" id="loading">Loading...</div>
+            <div class="booking-list" id="bookingList"></div>
+        </div>
+    </div>
+
+    <script>
+        // API base URL (change if running on different port)
+        const API_URL = 'http://localhost:8000';
+
+        // Show/hide filter value input based on filter type
+        document.getElementById('filterType').addEventListener('change', function() {
+            const filterValueGroup = document.getElementById('filterValueGroup');
+            const filterValueLabel = document.getElementById('filterValueLabel');
+            const filterValueInput = document.getElementById('filterValue');
+
+            if (this.value) {
+                filterValueGroup.style.display = 'block';
+                if (this.value === 'room') {
+                    filterValueLabel.textContent = 'Room Name *';
+                    filterValueInput.placeholder = 'e.g., EVEREST';
+                } else {
+                    filterValueLabel.textContent = 'User Name *';
+                    filterValueInput.placeholder = 'e.g., john_doe';
+                }
+            } else {
+                filterValueGroup.style.display = 'none';
+            }
+        });
+
+        // Create booking form submission
+        document.getElementById('createBookingForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const room = document.getElementById('room').value;
+            const user = document.getElementById('user').value;
+            const startDatetime = document.getElementById('start-datetime').value;
+            const endDatetime = document.getElementById('end-datetime').value;
+
+            // Convert datetime-local format to required format
+            const startTime = startDatetime.replace('T', ' ');
+            const endTime = endDatetime.replace('T', ' ');
+
+            try {
+                const response = await fetch(`${API_URL}/bookings`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        room: room,
+                        user: user,
+                        start_time: startTime,
+                        end_time: endTime
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showAlert('createAlert', 'success', '✅ Booking created successfully!');
+                    document.getElementById('createBookingForm').reset();
+                } else {
+                    showAlert('createAlert', 'error', '❌ Error: ' + data.detail);
+                }
+            } catch (error) {
+                showAlert('createAlert', 'error', '❌ Network error: ' + error.message);
+            }
+        });
+
+        // Query bookings form submission
+        document.getElementById('queryBookingsForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const date = document.getElementById('queryDate').value;
+            const filterType = document.getElementById('filterType').value;
+            const filterValue = document.getElementById('filterValue').value;
+
+            if (!filterType || !filterValue) {
+                showAlert('queryAlert', 'error', '❌ Please select a filter type and enter a value');
+                return;
+            }
+
+            // Show loading
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('bookingList').innerHTML = '';
+
+            try {
+                const params = new URLSearchParams({
+                    date: date,
+                    [filterType]: filterValue
+                });
+
+                const response = await fetch(`${API_URL}/bookings?${params}`);
+                const data = await response.json();
+
+                // Hide loading
+                document.getElementById('loading').style.display = 'none';
+
+                if (response.ok) {
+                    displayBookings(data);
+                    if (data.length === 0) {
+                        showAlert('queryAlert', 'success', 'ℹ️ No bookings found for the selected date and filter.');
+                    } else {
+                        showAlert('queryAlert', 'success', `✅ Found ${data.length} booking(s)`);
+                    }
+                } else {
+                    showAlert('queryAlert', 'error', '❌ Error: ' + data.detail);
+                }
+            } catch (error) {
+                document.getElementById('loading').style.display = 'none';
+                showAlert('queryAlert', 'error', '❌ Network error: ' + error.message);
+            }
+        });
+
+        // Display bookings
+        function displayBookings(bookings) {
+            const bookingList = document.getElementById('bookingList');
+
+            if (bookings.length === 0) {
+                bookingList.innerHTML = '<p style="text-align: center; color: #666;">No bookings found.</p>';
+                return;
+            }
+
+            bookingList.innerHTML = bookings.map(booking => {
+                const startTime = new Date(booking.start_time).toLocaleString();
+                const endTime = new Date(booking.end_time).toLocaleString();
+
+                return `
+                    <div class="booking-item">
+                        <strong>🏢 Room:</strong> ${booking.room}<br>
+                        <strong>👤 User:</strong> ${booking.user}<br>
+                        <strong>🕐 Start:</strong> ${startTime}<br>
+                        <strong>🕑 End:</strong> ${endTime}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Show alert message
+        function showAlert(elementId, type, message) {
+            const alertDiv = document.getElementById(elementId);
+            alertDiv.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+
+            // Auto-hide after 5 seconds
+            setTimeout(() => {
+                alertDiv.innerHTML = '';
+            }, 5000);
+        }
+
+        // Set minimum datetime to now for both start and end time
+        const now = new Date();
+        now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+        const minDateTime = now.toISOString().slice(0, 16);
+        document.getElementById('start-datetime').min = minDateTime;
+        document.getElementById('end-datetime').min = minDateTime;
+
+        // Set default date for query to today
+        document.getElementById('queryDate').valueAsDate = new Date();
+    </script>
+</body>
+</html>

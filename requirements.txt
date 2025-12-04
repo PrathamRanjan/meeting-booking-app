@@ -1,0 +1,16 @@
+# Meeting Room Booking API - Dependencies
+
+# Web Framework
+fastapi>=0.104.0
+
+# ASGI Server
+uvicorn[standard]>=0.24.0
+
+# Database ORM
+sqlmodel>=0.0.14
+
+# Testing
+pytest>=7.4.0
+httpx>=0.25.0
+
+# Note: Python 3.10+ required for union type syntax (str | None)
