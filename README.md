@@ -33,6 +33,8 @@ A REST API system for managing meeting room bookings with conflict detection, va
 - ✅ Application logging for debugging and monitoring
 - ✅ 10 automated tests covering all scenarios
 - ✅ Proper HTTP status codes (201, 200, 400, 409)
+- ✅ Concurrency-safe booking creation using SQLite `BEGIN IMMEDIATE`
+- ✅ Startup index creation on `(room, start_time)` and `(room, end_time)` for faster queries
 
 ---
 
@@ -384,6 +386,31 @@ Beyond the basic requirements, the following validations were added:
 - Checks if room is already booked during requested time
 - Uses interval overlap logic: checks if new booking overlaps with any existing booking
 - Returns HTTP 409 (Conflict) status code
+
+### Concurrency & Indexing (New)
+
+- What was added:
+  - Concurrency-safe transaction around the overlap check and insert using SQLite `BEGIN IMMEDIATE`.
+  - Composite indexes on `(room, start_time)` and `(room, end_time)` to speed up overlap and date queries.
+
+- Why:
+  - Without a write lock, two concurrent requests could both pass the overlap check and insert conflicting rows (time-of-check/time-of-insert race). `BEGIN IMMEDIATE` acquires a RESERVED lock so only one writer proceeds at a time, ensuring correctness.
+  - Overlap and day queries are frequent and filter by `room` and time boundaries. Indexes significantly reduce scan time as data grows.
+
+- How it’s implemented:
+  - Concurrency-safe create (in `app.py`):
+    - The `POST /bookings` handler starts a write transaction via `session.exec("BEGIN IMMEDIATE")` before performing the overlap check.
+    - Overlap check and user-per-day limit validation run inside the same transaction; on conflict/validation failure, we `rollback()` to release the lock.
+    - On success we `commit()` and then `refresh(booking)`.
+  - Index creation (in `app.py` startup):
+    - Inside the FastAPI `lifespan` startup block, after `create_db_and_tables()`, we run idempotent DDL:
+      - `CREATE INDEX IF NOT EXISTS ix_booking_room_start ON booking (room, start_time)`
+      - `CREATE INDEX IF NOT EXISTS ix_booking_room_end ON booking (room, end_time)`
+    - Executed using `sqlalchemy.text` with a short-lived `Session(engine)` and committed; exceptions are logged but do not block startup.
+
+- Notes and trade-offs:
+  - SQLite doesn’t support `SELECT ... FOR UPDATE`; `BEGIN IMMEDIATE` is the pragmatic way to serialize writers.
+  - In production on PostgreSQL, prefer an exclusion constraint on a range type to enforce non-overlap at the database level.
 
 #### 5. **Query Validations**
 - Must provide exactly one filter (room OR user, not both)
