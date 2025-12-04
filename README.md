@@ -451,17 +451,3 @@ If given more time, these features could be added:
 - Environment configuration (.env file)
 
 ---
-
-## Contact & Support
-
-For questions or issues during the interview, please ask!
-
-**Author:** Pratham Ranjan
-**Purpose:** Mastercard Foundry R&D 2026 Launch Program Interview
-**Date:** December 2025
-
----
-
-## License
-
-This project is created for interview purposes.
