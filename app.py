@@ -3,9 +3,10 @@ from fastapi.staticfiles import StaticFiles  # for serving HTML files
 from fastapi.responses import FileResponse  # for serving index.html
 from fastapi.middleware.cors import CORSMiddleware  # for allowing frontend to call API
 from sqlmodel import Session, select
+from sqlalchemy import text  # for explicit SQL (BEGIN IMMEDIATE, index DDL)
 from pydantic import BaseModel  # needed for request body validation
 from models import Booking
-from database import create_db_and_tables, get_session
+from database import create_db_and_tables, get_session, engine
 from datetime import datetime, timedelta
 from contextlib import asynccontextmanager  # for modern FastAPI lifespan events
 import re  # for regex validation of room names
@@ -26,6 +27,26 @@ async def lifespan(_app: FastAPI):
     logger.info("Starting up Meeting Room Booking API...")
     create_db_and_tables()
     logger.info("Database initialized successfully")
+    
+    # Create helpful indexes on startup (idempotent via IF NOT EXISTS)
+    # Why here? Keeping DDL in startup keeps models.py simple and avoids a
+    # migration dependency for this exercise. In a real system, use Alembic.
+    try:
+        with Session(engine) as s:
+            # Speeds up overlap checks and day-based queries by room
+            s.exec(text(
+                "CREATE INDEX IF NOT EXISTS ix_booking_room_start ON booking (room, start_time)"
+            ))
+            # Also useful for potential reverse range scans or future features
+            s.exec(text(
+                "CREATE INDEX IF NOT EXISTS ix_booking_room_end ON booking (room, end_time)"
+            ))
+            s.commit()
+        logger.info("Ensured composite indexes exist (room,start_time) and (room,end_time)")
+    except Exception:
+        # Index creation failing should not block the app from starting,
+        # but it’s important enough to log.
+        logger.exception("Failed to ensure indexes; continuing without them")
     yield  # Server runs here and handles requests
     # Code that runs when server shuts down would go here (if needed)
     logger.info("Shutting down Meeting Room Booking API...")
@@ -167,50 +188,73 @@ def create_booking(
     if start_dt > max_future_date:
         raise HTTPException(status_code=400, detail="Cannot book more than 1 year in advance")
 
-    # 10. Check for overlap with existing bookings
-    statement = select(Booking).where(
-        Booking.room == booking_data.room,
-        Booking.start_time < end_dt,
-        Booking.end_time > start_dt
-    )
+    # 10–12. Concurrency-safe overlap check and insert in a single write transaction
+    #
+    # Problem: Two concurrent requests could both read "no conflict" and then insert,
+    # causing an overlap. SQLite doesn’t support SELECT ... FOR UPDATE, so we
+    # explicitly acquire a write lock up-front using BEGIN IMMEDIATE. This prevents
+    # a second writer from starting its transaction until we commit/rollback,
+    # effectively serializing the overlap check + insert.
+    try:
+        # Acquire a RESERVED lock immediately; other writers will wait.
+        session.exec(text("BEGIN IMMEDIATE"))
 
-    results = session.exec(statement).all()
-
-    if results:
-        logger.warning(f"Booking conflict detected - Room: {booking_data.room}, Time: {start_dt}")
-        raise HTTPException(status_code=409, detail="Booking conflict, room already booked for this time")
-
-    # 11. Check user booking limit (max 5 bookings per day)
-    booking_date = start_dt.date()
-    day_start = datetime.combine(booking_date, datetime.min.time())
-    day_end = datetime.combine(booking_date + timedelta(days=1), datetime.min.time())
-
-    user_bookings_today = session.exec(
-        select(Booking).where(
-            Booking.user == booking_data.user,
-            Booking.start_time >= day_start,
-            Booking.start_time < day_end
+        # 10. Check for overlap with existing bookings (performed inside the txn)
+        statement = select(Booking).where(
+            Booking.room == booking_data.room,
+            Booking.start_time < end_dt,
+            Booking.end_time > start_dt
         )
-    ).all()
+        results = session.exec(statement).all()
+        if results:
+            logger.warning(
+                f"Booking conflict detected - Room: {booking_data.room}, Time: {start_dt}"
+            )
+            # Important: rollback to release the lock before raising
+            session.rollback()
+            raise HTTPException(status_code=409, detail="Booking conflict, room already booked for this time")
 
-    if len(user_bookings_today) >= 5:
-        logger.warning(f"User {booking_data.user} exceeded daily booking limit (5 bookings)")
-        raise HTTPException(status_code=400, detail="User cannot have more than 5 bookings per day")
+        # 11. Check user booking limit (max 5 bookings per day)
+        booking_date = start_dt.date()
+        day_start = datetime.combine(booking_date, datetime.min.time())
+        day_end = datetime.combine(booking_date + timedelta(days=1), datetime.min.time())
 
-    # 12. Save the booking to database
+        user_bookings_today = session.exec(
+            select(Booking).where(
+                Booking.user == booking_data.user,
+                Booking.start_time >= day_start,
+                Booking.start_time < day_end
+            )
+        ).all()
+        if len(user_bookings_today) >= 5:
+            logger.warning(
+                f"User {booking_data.user} exceeded daily booking limit (5 bookings)"
+            )
+            session.rollback()
+            raise HTTPException(status_code=400, detail="User cannot have more than 5 bookings per day")
 
-    booking = Booking(
-        room=booking_data.room,
-        user=booking_data.user,
-        start_time=start_dt,
-        end_time=end_dt
+        # 12. Save the booking to database (still within the same transaction)
+        booking = Booking(
+            room=booking_data.room,
+            user=booking_data.user,
+            start_time=start_dt,
+            end_time=end_dt
+        )
+        session.add(booking)
+        session.commit()  # releases the RESERVED lock
+        session.refresh(booking)
+    except HTTPException:
+        # Already rolled back above for expected validation failures
+        raise
+    except Exception:
+        # Any unexpected error: ensure we release the lock and propagate
+        session.rollback()
+        logger.exception("Unexpected error while creating a booking")
+        raise
+
+    logger.info(
+        f"Booking created successfully - ID: {booking.id}, Room: {booking.room}, User: {booking.user}, Time: {booking.start_time}"
     )
-
-    session.add(booking)
-    session.commit()
-    session.refresh(booking)
-
-    logger.info(f"Booking created successfully - ID: {booking.id}, Room: {booking.room}, User: {booking.user}, Time: {booking.start_time}")
     return booking 
     
         
